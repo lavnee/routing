@@ -18,7 +18,6 @@ class LSrouter(Router):
     def __init__(self, addr, heartbeat_time):
         Router.__init__(self, addr)  # Initialize base class - DO NOT REMOVE
         self.heartbeat_time = heartbeat_time
-        self.last_time = 0
         # TODO
         #   add your own class fields and initialization code here
         pass
