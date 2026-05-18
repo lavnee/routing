@@ -57,12 +57,19 @@ class DVrouter(Router):
         #   update the distance vector of this router
         #   update the forwarding table
         #   broadcast the distance vector of this router to neighbors
+
         self.neighbors[port] = (endpoint, cost)
+
+        # Cập nhật đường đến endpoint nếu chưa biết hoặc link mới này ngắn hơn
         if endpoint not in self.distance or cost < self.distance[endpoint]:
             self.distance[endpoint] = cost
             self.nexthop[endpoint] = port
-            self.run_bellman_ford()                                               # Cập nhật DV của chính mình vì link mới
-            self.send_dv_to_neighbors()
+
+        # LUÔN chạy lại Bellman-Ford và broadcast, dù link mới có ngắn hơn hay không
+        # Lý do: láng giềng mới có thể biết đường đến các đích khác mà mình chưa biết
+        # → phải tính lại và thông báo cho tất cả láng giềng trong mọi trường hợp
+        self.run_bellman_ford()
+        self.send_dv_to_neighbors()
         pass
 
     def handle_remove_link(self, port):
@@ -96,7 +103,7 @@ class DVrouter(Router):
         """Representation for debugging in the network visualizer."""
         # TODO
         #   NOTE This method is for your own convenience and will not be graded
-        return f"DVrouter(addr={self.addr})"
+        return f"DVrouter(addr={self.addr}, distance={self.distance})"
 
     def send_dv_to_neighbors(self):
         for port, (neighbor, cost) in self.neighbors.items():
@@ -107,7 +114,6 @@ class DVrouter(Router):
                 else:
                     dv_to_send[dest] = dist
 
-            import json
             content = json.dumps(dv_to_send)                                          # Chuyển DV thành JSON string để gửi đi
             packet = Packet(Packet.ROUTING, self.addr, neighbor, content)             # Tạo packet routing chứa DV
             self.send(port, packet)
