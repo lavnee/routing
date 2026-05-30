@@ -15,7 +15,7 @@ class DVrouter(Router):
         self.neighbors = {}              # neighbor -> cost: cổng nào nối đến neighbor nào với chi phí bao nhiêu: { port_số_1: ("A", 2), port_số_2: ("B", 5), ... }
         self.neighbor_dvs = {}           # neighbor -> {dest: cost}: neighbor nào gửi đến mình DV gì: { "A": {"X": 5, "Y": 3, ...}, "B": {"X": 2, "Z": 4, ...}, ... }
 
-        self.distance[self.addr] = 0     # chi phí đến chính mình là 0
+        self.distance[self.addr] = 0
         pass
 
     def handle_packet(self, port, packet):
@@ -45,6 +45,7 @@ class DVrouter(Router):
             self.neighbor_dvs[neighbor_addr] = neighbor_dv
 
             old_distance = self.distance.copy()
+            old_nexthop = self.nexthop.copy()
             self.run_bellman_ford()
 
             if self.distance != old_distance:
@@ -59,11 +60,6 @@ class DVrouter(Router):
         #   broadcast the distance vector of this router to neighbors
 
         self.neighbors[port] = (endpoint, cost)
-
-        # Cập nhật đường đến endpoint nếu chưa biết hoặc link mới này ngắn hơn
-        if endpoint not in self.distance or cost < self.distance[endpoint]:
-            self.distance[endpoint] = cost
-            self.nexthop[endpoint] = port
 
         # LUÔN chạy lại Bellman-Ford và broadcast, dù link mới có ngắn hơn hay không
         # Lý do: láng giềng mới có thể biết đường đến các đích khác mà mình chưa biết
@@ -84,8 +80,8 @@ class DVrouter(Router):
         neighbor_addr = self.neighbors[port][0]
         del self.neighbors[port]
         if neighbor_addr in self.neighbor_dvs:
-            del self.neighbor_dvs[neighbor_addr]                                   # Xóa DV của neighbor bị mất khỏi self.neighbor_dvs
-        self.run_bellman_ford()                                                        # Cập nhật DV của chính mình vì mất link
+            del self.neighbor_dvs[neighbor_addr]                                        # Xóa DV của neighbor bị mất khỏi self.neighbor_dvs
+        self.run_bellman_ford()                                                         # Cập nhật DV của chính mình vì mất link
         self.send_dv_to_neighbors()                                                     # Broadcast DV mới đến neighbors
         pass
 
@@ -106,10 +102,10 @@ class DVrouter(Router):
         return f"DVrouter(addr={self.addr}, distance={self.distance})"
 
     def send_dv_to_neighbors(self):
-        for port, (neighbor, cost) in self.neighbors.items():
-            dv_to_send = {}                                               # Tạo bảng DV để gửi đi
+        for port, (neighbor, _) in self.neighbors.items():
+            dv_to_send = {}                                                           # Tạo bảng DV để gửi đi
             for dest, dist in self.distance.items():
-                if dest in self.nexthop and self.nexthop[dest] == port:   # Nếu đích này đi qua neighbor này, áp dụng poison reverse
+                if dest in self.nexthop and self.nexthop[dest] == port:               # Nếu đích này đi qua neighbor này, áp dụng poison reverse
                     dv_to_send[dest] = 16
                 else:
                     dv_to_send[dest] = dist
@@ -127,8 +123,10 @@ class DVrouter(Router):
             if neighbor not in self.neighbor_dvs:                                     # Nếu neighbor này chưa gửi DV nào, bỏ qua
                 continue
             for dest, neighbor_cost in self.neighbor_dvs[neighbor].items():
-                new_cost = link_cost + neighbor_cost
                 if neighbor_cost >= 16:
+                    continue
+                new_cost = link_cost + neighbor_cost
+                if new_cost >= 16:
                     continue
                 if dest not in new_distance or new_cost < new_distance[dest]:
                     new_distance[dest] = new_cost
